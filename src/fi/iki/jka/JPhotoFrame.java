@@ -26,11 +26,9 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.lang.reflect.Field;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.HashMap;
-import java.util.Iterator;
+import java.util.*;
 import java.util.prefs.Preferences;
 
 import javax.swing.AbstractAction;
@@ -58,8 +56,7 @@ import com.drew.metadata.exif.ExifDirectory;
 /** Top-level frame containing a BrowsePanel which shows scaled versions
  * images from the given list of images.
  */
-public class JPhotoFrame extends JFrame
-    implements ListSelectionListener, ActionListener {
+public class JPhotoFrame extends JFrame implements ListSelectionListener, ActionListener {
 
     public static String FILE_EXT = ".jph";
     public static String APP_NAME = "JPhotoAlbum";
@@ -99,23 +96,34 @@ public class JPhotoFrame extends JFrame
     protected File photoDirectory = null;
     
     protected static HashMap allFrames = new HashMap();
+    private JPhotoShow show = null;
+    private boolean mockVisible;
+    private int rotationInterval;
+//    private
+
+    public boolean isShowVisible(){
+        if (show == null) {
+            return false;
+        }
+        return this.show.isVisible();
+    }
     
     protected JPhotoFrame() throws Exception {
         // Do nothing... needed for inheritance !
     }
 
     public JPhotoFrame(String frameName, JPhotoCollection photos) throws Exception {
-        init(frameName, photos);
+        init(frameName, photos, false);
     }
 
-    public JPhotoFrame(String frameName, String files[]) throws Exception {
-        init(frameName, new JPhotoCollection(files));
+    public JPhotoFrame(String frameName, String files[], boolean showUI) throws Exception {
+        init(frameName, new JPhotoCollection(files), showUI);
     }
 
     /** Real init called from different constructors
      */
-    protected void init(String frameName, JPhotoCollection photos) throws Exception {
-        prefs = Preferences.userRoot().node("/fi/iki/jka/jphotoframe");        
+    protected void init(String frameName, JPhotoCollection photos, boolean showUI) throws Exception {
+        prefs = Preferences.userRoot().node("/fi/iki/jka/jphotoframe");
         JPhotoPageInfo.setDefault(prefs.get(PAGEINFO, null));
         photoDirectory = new File(prefs.get(PHOTO_DIR, System.getProperty("user.dir")));
             
@@ -125,7 +133,7 @@ public class JPhotoFrame extends JFrame
         
         if (frameName!=null) {
             albumFileName = frameName;
-            if (!photos.load(albumFileName))
+            if (!photos.load(albumFileName) && showUI)
                 JOptionPane.showMessageDialog(null, "Cannot open "+albumFileName,
                                               APP_NAME, JOptionPane.ERROR_MESSAGE);
         }
@@ -207,7 +215,11 @@ public class JPhotoFrame extends JFrame
         frame = this;
         setFrameIcon();
         allFrames.put(frameName, this);
-        setVisible(true);
+        if (showUI) {
+            setVisible(true);
+        } else {
+            setMockVisible(true);
+        }
 
         Object[] options = {
                 "Open Existing Album",
@@ -546,7 +558,7 @@ public class JPhotoFrame extends JFrame
         else if (cmd.equals(JPhotoMenu.A_WATERMARK)) {
             String def = photos.getWatermark();
             if (def.equals(""))
-                def = "© "+Calendar.getInstance().get(Calendar.YEAR)+" ";
+                def = "ï¿½ "+Calendar.getInstance().get(Calendar.YEAR)+" ";
             String res = JOptionPane.showInputDialog(this, "Watermark",
                                                      def);
             if (res!=null)
@@ -580,14 +592,8 @@ public class JPhotoFrame extends JFrame
             showExif();
         }
         else if (cmd.equals(JPhotoMenu.A_SLIDESHOW)) {
-            if (photos.getSize()>0) {
-                JPhotoShow show = new JPhotoShow(photos, 5000, list);
-                show.setVisible(true);
-            }
-            else
-                JOptionPane.showMessageDialog(this, "No photos to show!",
-                                              APP_NAME, JOptionPane.ERROR_MESSAGE);
-                
+            showSlideshow();
+
         }
         else if (cmd.equals(JPhotoMenu.A_HELP)) {
             displayHelp();
@@ -596,7 +602,7 @@ public class JPhotoFrame extends JFrame
             JOptionPane.showMessageDialog(this, APP_NAME+" v1.4.5 - Organize and Publish Your Digital Photos.\n"+
                                           "Copyright 2005-2007 Jari Karjala [www.jpkware.com],\n"
                                           +"Tarja Hakala [www.hakalat.net]"
-                                          +" and Zbynek Mužík [zbynek.muzik@email.cz]\n"
+                                          +" and Zbynek Muï¿½ï¿½k [zbynek.muzik@email.cz]\n"
                                           +"This is free software, licenced under the GNU General Public License.",
                                           JPhotoMenu.A_ABOUT, JOptionPane.INFORMATION_MESSAGE);
         }
@@ -624,6 +630,21 @@ public class JPhotoFrame extends JFrame
             System.out.println("Not implemented: "+cmd);
         
         setTitle();
+    }
+
+    private void showSlideshow() {
+        if (photos.getSize()>0) {
+            show = new JPhotoShow(photos, getRotationInterval(), list);
+            show.setVisible(true);
+        }
+        else {
+            showErrorMessage("No photos to show!");
+        }
+    }
+
+    private void showErrorMessage(String message) {
+        JOptionPane.showMessageDialog(this, message,
+                APP_NAME, JOptionPane.ERROR_MESSAGE);
     }
 
     public void insertPhotos(String files[]) {
@@ -692,7 +713,7 @@ public class JPhotoFrame extends JFrame
         exifDialog.setVisible(true);
     }
 
-    public JDialog getExifDialog(java.util.List tagValues) {
+    public JDialog getExifDialog(List tagValues) {
 
         if (exifDialog == null) 
             exifDialog = new JPhotoExifDialog(this, tagValues, prefs);
@@ -813,7 +834,23 @@ public class JPhotoFrame extends JFrame
             photos.setDirty(true);
         }
     }
-    
+
+    public void setMockVisible(boolean mockVisible) {
+        this.mockVisible = mockVisible;
+    }
+
+    public boolean getMockVisible() {
+        return mockVisible;
+    }
+
+    public void setRotationInterval(int rotationInterval) {
+        this.rotationInterval = rotationInterval;
+    }
+
+    public int getRotationInterval() {
+        return rotationInterval;
+    }
+
     /** Tell the list how big a view there is so that it can adjust display rows.
     */
     class ResizeAdapter extends ComponentAdapter {
@@ -1057,7 +1094,7 @@ public class JPhotoFrame extends JFrame
                 exportAll(args[i], flags);
         }
         else if (args[0].indexOf(FILE_EXT)<0) {
-            frame = new JPhotoFrame(null, Utils.expandAllDirectories(args));
+            frame = new JPhotoFrame(null, Utils.expandAllDirectories(args), false);
         }
         else {
             try {
